@@ -1,1 +1,106 @@
-# Data schema configuration.
+schema_version: "1.0"
+
+dataset:
+  id: erm2-nwe9
+  name: NYC 311 Service Requests
+
+# The Socrata query requests only the defined columns; additional returned fields are not expected.
+allow_unexpected_columns: false
+
+required_columns:
+  - unique_key
+  - created_date
+  - closed_date
+  - agency
+  - complaint_type
+  - descriptor
+  - status
+  - borough
+  - incident_zip
+  - latitude
+  - longitude
+
+unique_key_column: unique_key
+timestamp_columns:
+  - created_date
+  - closed_date
+numeric_columns:
+  - latitude
+  - longitude
+categorical_columns:
+  - agency
+  - complaint_type
+  - descriptor
+  - status
+  - borough
+
+columns:
+  unique_key:
+    datatype: string
+    required: true
+    nullable: false
+    max_missing_percentage: 0.0
+  created_date:
+    datatype: datetime
+    required: true
+    nullable: false
+    max_missing_percentage: 0.0
+  closed_date:
+    datatype: datetime
+    required: true
+    nullable: true
+    # Open service requests commonly have no closure date.
+    max_missing_percentage: 70.0
+  agency:
+    datatype: string
+    required: true
+    nullable: false
+    max_missing_percentage: 0.0
+  complaint_type:
+    datatype: string
+    required: true
+    nullable: false
+    max_missing_percentage: 0.0
+  descriptor:
+    datatype: string
+    required: true
+    nullable: true
+    max_missing_percentage: 10.0
+  status:
+    datatype: string
+    required: true
+    nullable: false
+    max_missing_percentage: 0.0
+  borough:
+    datatype: string
+    required: true
+    nullable: false
+    max_missing_percentage: 0.0
+  incident_zip:
+    # ZIP codes are identifiers and can contain leading zeroes.
+    datatype: string
+    required: true
+    nullable: true
+    max_missing_percentage: 10.0
+  latitude:
+    datatype: numeric
+    required: true
+    nullable: true
+    max_missing_percentage: 10.0
+    minimum: -90
+    maximum: 90
+  longitude:
+    datatype: numeric
+    required: true
+    nullable: true
+    max_missing_percentage: 10.0
+    minimum: -180
+    maximum: 180
+
+rules:
+  date_order:
+    # Apply only where both timestamps are present; open requests may lack closed_date.
+    when: both_values_exist
+    earlier_column: created_date
+    later_column: closed_date
+    condition: closed_date_must_not_be_earlier_than_created_date
