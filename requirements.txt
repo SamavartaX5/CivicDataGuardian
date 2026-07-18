@@ -1,0 +1,8 @@
+pandas
+numpy
+requests
+PyYAML
+scipy
+scikit-learn
+streamlit
+pytest
