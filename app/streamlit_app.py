@@ -295,14 +295,24 @@ def main() -> None:
 
     st.sidebar.title("CivicData Guardian")
     st.sidebar.caption(f"Latest report: {(report or {}).get('run_timestamp_utc', 'Unavailable')}")
-    if st.sidebar.button("Run monitoring pipeline", width="stretch"):
+    pipeline_running_key = "civicdata_pipeline_running"
+    if pipeline_running_key not in st.session_state:
+        st.session_state[pipeline_running_key] = False
+    if st.sidebar.button(
+        "Run monitoring pipeline",
+        width="stretch",
+        disabled=st.session_state[pipeline_running_key],
+    ) and not st.session_state[pipeline_running_key]:
+        st.session_state[pipeline_running_key] = True
         try:
             with st.spinner("Running the monitoring pipeline..."):
                 run_pipeline()
             st.cache_data.clear()
+            st.session_state[pipeline_running_key] = False
             st.success("Monitoring pipeline completed. Reloading generated artifacts.")
             st.rerun()
         except Exception as error:
+            st.session_state[pipeline_running_key] = False
             st.error(f"Monitoring pipeline failed: {error}")
 
     scenario_names = [item["scenario_name"] for item in (evaluation or {}).get("per_scenario_results", [])]

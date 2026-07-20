@@ -418,13 +418,15 @@ def run_fault_injection() -> tuple[list[dict[str, Any]], Path]:
     clean_dataframe = load_clean_dataset()
     clean_baseline = clean_dataframe.copy(deep=True)
     scenario_metadata: list[dict[str, Any]] = []
-    scenario_object_ids: set[int] = set()
+    scenario_dataframes: list[pd.DataFrame] = []
 
     for scenario_function in SCENARIO_FUNCTIONS:
         corrupted_dataframe, metadata = scenario_function(clean_dataframe)
-        if corrupted_dataframe is clean_dataframe or id(corrupted_dataframe) in scenario_object_ids:
+        if corrupted_dataframe is clean_dataframe or any(
+            corrupted_dataframe is prior_dataframe for prior_dataframe in scenario_dataframes
+        ):
             raise AssertionError("Each fault scenario must return an independent DataFrame object.")
-        scenario_object_ids.add(id(corrupted_dataframe))
+        scenario_dataframes.append(corrupted_dataframe)
         pd.testing.assert_frame_equal(clean_dataframe, clean_baseline)
         save_corrupted_dataset(corrupted_dataframe, metadata)
         scenario_metadata.append(to_json_safe(metadata))

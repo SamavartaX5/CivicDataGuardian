@@ -53,14 +53,27 @@ def test_pipeline_offline_smoke_uses_tmp_artifacts(monkeypatch, tmp_path: Path, 
     monkeypatch.setattr(pipeline, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(pipeline, "REPORTS_DIRECTORY", reports_directory)
     monkeypatch.setattr(pipeline, "LATEST_EVALUATION_PATH", reports_directory / "latest_evaluation.json")
-    monkeypatch.setattr(pipeline, "load_or_ingest_clean_data", lambda: valid_dataframe.copy(deep=True))
+    monkeypatch.setattr(
+        pipeline,
+        "load_or_ingest_clean_data",
+        lambda: (
+            valid_dataframe.copy(deep=True),
+            {
+                "source_url": "https://example.test",
+                "latest_created_date": valid_dataframe.loc[0, "created_date"],
+            },
+        ),
+    )
     monkeypatch.setattr(pipeline, "load_schema", lambda: schema)
     monkeypatch.setattr(pipeline, "run_fault_injection", lambda: (scenarios, manifest_path))
 
     report = pipeline.run_pipeline()
     saved_report = reports_directory / "latest_evaluation.json"
+    saved_clean_report = reports_directory / "latest_report.json"
     assert saved_report.exists()
+    assert saved_clean_report.exists()
     assert json.loads(saved_report.read_text(encoding="utf-8"))["report_version"] == "1.0"
+    assert json.loads(saved_clean_report.read_text(encoding="utf-8"))["source_url"] == "https://example.test"
     assert report["pending_scenario_count"] == 0
     assert set(pipeline.SUPPORTED_ISSUE_TYPES).issubset(report["detection_rate_by_fault_type"])
     assert all(0 <= report[name] <= 1 for name in ("precision", "recall", "f1_score", "false_positive_rate"))

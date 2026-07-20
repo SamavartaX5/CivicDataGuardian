@@ -13,8 +13,8 @@ import pandas as pd
 from src.anomaly_detection import compare_baseline_current_volumes
 from src.drift_detection import detect_distribution_drift
 from src.fault_injection import RAW_DATA_PATH, load_clean_dataset, run_fault_injection
-from src.ingestion import run_ingestion
-from src.reporting import REPORTS_DIRECTORY, to_json_safe
+from src.ingestion import DATASET_ID, SOURCE_URL, run_ingestion
+from src.reporting import REPORTS_DIRECTORY, build_structured_report, save_report, to_json_safe
 from src.validation import load_schema, validate_dataframe
 
 
@@ -162,12 +162,31 @@ def aggregate_evaluation_metrics(
     }
 
 
-def load_or_ingest_clean_data() -> pd.DataFrame:
-    """Load the existing raw CSV, ingesting only when it is unavailable."""
+def build_local_ingestion_metadata(dataframe: pd.DataFrame) -> dict[str, Any]:
+    """Describe an existing raw CSV when a prior ingestion metadata object is unavailable."""
+    latest_created_date = None
+    if "created_date" in dataframe.columns:
+        created_dates = dataframe["created_date"].dropna()
+        if not created_dates.empty:
+            latest_created_date = str(created_dates.iloc[0])
+    return {
+        "source_url": SOURCE_URL,
+        "rows_downloaded": int(len(dataframe)),
+        "columns_downloaded": int(len(dataframe.columns)),
+        "column_names": list(dataframe.columns),
+        "latest_created_date": latest_created_date,
+        "stable_output_path": str(RAW_DATA_PATH),
+        "snapshot_output_path": None,
+        "download_runtime_seconds": None,
+    }
+
+
+def load_or_ingest_clean_data() -> tuple[pd.DataFrame, Mapping[str, Any]]:
+    """Load raw data with local metadata, or return the real metadata from ingestion."""
     if RAW_DATA_PATH.exists():
-        return load_clean_dataset()
-    dataframe, _ = run_ingestion()
-    return dataframe
+        dataframe = load_clean_dataset()
+        return dataframe, build_local_ingestion_metadata(dataframe)
+    return run_ingestion()
 
 
 def load_manifest(manifest_path: Path) -> dict[str, Any]:
@@ -191,7 +210,7 @@ def save_evaluation_report(report: Mapping[str, Any], timestamp: str) -> tuple[P
 def run_pipeline() -> dict[str, Any]:
     """Run clean validation, deterministic fault evaluation, and JSON reporting."""
     pipeline_started_at = time.perf_counter()
-    clean_dataframe = load_or_ingest_clean_data()
+    clean_dataframe, ingestion_metadata = load_or_ingest_clean_data()
     schema = load_schema()
     clean_validation_result = validate_dataframe(clean_dataframe, schema)
     scenario_metadata, manifest_path = run_fault_injection()
@@ -250,8 +269,29 @@ def run_pipeline() -> dict[str, Any]:
 
     pipeline_runtime_seconds = time.perf_counter() - pipeline_started_at
     records_validated_per_second = safe_divide(total_rows_evaluated, pipeline_runtime_seconds)
+
+    clean_report_started_at = time.perf_counter()
+    clean_records_validated_per_second = safe_divide(len(clean_dataframe), pipeline_runtime_seconds)
+    clean_report = build_structured_report(
+        validation_result=clean_validation_result,
+        ingestion_metadata=ingestion_metadata,
+        dataset_id=DATASET_ID,
+        source_url=ingestion_metadata.get("source_url", SOURCE_URL),
+        pipeline_runtime_seconds=pipeline_runtime_seconds,
+        records_validated_per_second=clean_records_validated_per_second,
+        report_generation_time_seconds=0.0,
+    )
+    clean_report["report_generation_time_seconds"] = round(
+        time.perf_counter() - clean_report_started_at, 6
+    )
+    latest_report_path, snapshot_report_path = save_report(
+        clean_report, output_directory=REPORTS_DIRECTORY
+    )
+
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report_paths = {
+        "latest_report_path": str(latest_report_path),
+        "snapshot_report_path": str(snapshot_report_path),
         "latest_evaluation_path": str(LATEST_EVALUATION_PATH),
         "snapshot_evaluation_path": str(REPORTS_DIRECTORY / f"evaluation_report_{timestamp}.json"),
     }
@@ -288,6 +328,8 @@ def run_pipeline() -> dict[str, Any]:
     }
     latest_path, snapshot_path = save_evaluation_report(report, timestamp)
     report["report_paths"] = {
+        "latest_report_path": str(latest_report_path),
+        "snapshot_report_path": str(snapshot_report_path),
         "latest_evaluation_path": str(latest_path),
         "snapshot_evaluation_path": str(snapshot_path),
     }
@@ -315,6 +357,7 @@ def print_final_summary(report: Mapping[str, Any]) -> None:
         )
     print(f"Latest evaluation report: {report['report_paths']['latest_evaluation_path']}")
     print(f"Snapshot evaluation report: {report['report_paths']['snapshot_evaluation_path']}")
+    print(f"Latest reliability report: {report['report_paths']['latest_report_path']}")
 
 
 def main() -> None:

@@ -1,0 +1,38 @@
+# Version control and local environments
+.git/
+.agents/
+.github/
+.venv/
+venv/
+env/
+ENV/
+
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Generated runtime artifacts
+data/raw/*
+data/injected/*
+reports/*
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Development-only files
+tests/
+*.log
