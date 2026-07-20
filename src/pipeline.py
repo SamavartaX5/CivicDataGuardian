@@ -11,6 +11,7 @@ from typing import Any, Iterable, Mapping
 import pandas as pd
 
 from src.anomaly_detection import compare_baseline_current_volumes
+from src.drift_detection import detect_distribution_drift
 from src.fault_injection import RAW_DATA_PATH, load_clean_dataset, run_fault_injection
 from src.ingestion import run_ingestion
 from src.reporting import REPORTS_DIRECTORY, to_json_safe
@@ -25,11 +26,13 @@ SUPPORTED_ISSUE_TYPES = (
     "invalid_numeric_value",
     "duplicate_unique_key",
     "volume_anomaly",
+    "category_drift",
+    "unexpected_category",
     "invalid_timestamp",
     "missingness_threshold_exceeded",
     "invalid_date_order",
 )
-PENDING_DETECTOR_TYPES = ("category_drift", "unexpected_category")
+PENDING_DETECTOR_TYPES: tuple[str, ...] = ()
 
 
 def normalize_issue_type(issue_type: object) -> str:
@@ -59,6 +62,7 @@ def evaluate_scenario(
     row_count: int,
     pending: bool = False,
     volume_detection: Mapping[str, Any] | None = None,
+    drift_detection: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate one scenario with a supported-issue-type multi-label matrix."""
     expected_types = sorted({normalize_issue_type(issue_type) for issue_type in expected_issue_types})
@@ -67,6 +71,11 @@ def evaluate_scenario(
         detected_types.update(
             normalize_issue_type(issue["issue_type"])
             for issue in volume_detection["issues"]
+        )
+    if drift_detection is not None:
+        detected_types.update(
+            normalize_issue_type(issue["issue_type"])
+            for issue in drift_detection["issues"]
         )
     detected_types = sorted(detected_types)
     expected_supported = set(expected_types).intersection(SUPPORTED_ISSUE_TYPES)
@@ -97,6 +106,7 @@ def evaluate_scenario(
         "schema_passed": validation_result["schema_passed"],
         "issue_type_matrix": matrix,
         "volume_detection": volume_detection,
+        "drift_detection": drift_detection,
     }
 
 
@@ -190,12 +200,14 @@ def run_pipeline() -> dict[str, Any]:
     total_rows_evaluated = len(clean_dataframe)
     peak_scenario_row_count = len(clean_dataframe)
     clean_volume_detection = compare_baseline_current_volumes(clean_dataframe, clean_dataframe)
+    clean_drift_detection = detect_distribution_drift(clean_dataframe, clean_dataframe)
     clean_result = evaluate_scenario(
         "clean_baseline",
         [],
         clean_validation_result,
         len(clean_dataframe),
         volume_detection=clean_volume_detection,
+        drift_detection=clean_drift_detection,
     )
 
     for metadata in manifest["scenarios"]:
@@ -203,6 +215,7 @@ def run_pipeline() -> dict[str, Any]:
         scenario_dataframe = pd.read_csv(scenario_path)
         validation_result = validate_dataframe(scenario_dataframe, schema)
         volume_detection = compare_baseline_current_volumes(clean_dataframe, scenario_dataframe)
+        drift_detection = detect_distribution_drift(clean_dataframe, scenario_dataframe)
         expected_issue_types = metadata["expected_issue_types"]
         pending = any(
             normalize_issue_type(issue_type) in PENDING_DETECTOR_TYPES
@@ -216,6 +229,7 @@ def run_pipeline() -> dict[str, Any]:
                 len(scenario_dataframe),
                 pending=pending,
                 volume_detection=volume_detection,
+                drift_detection=drift_detection,
             )
         )
         total_rows_evaluated += len(scenario_dataframe)
