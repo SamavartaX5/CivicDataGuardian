@@ -104,6 +104,7 @@ def evaluate_scenario(
         "row_count": row_count,
         "validation_passed": validation_result["validation_passed"],
         "schema_passed": validation_result["schema_passed"],
+        "validation_result": validation_result,
         "issue_type_matrix": matrix,
         "volume_detection": volume_detection,
         "drift_detection": drift_detection,
